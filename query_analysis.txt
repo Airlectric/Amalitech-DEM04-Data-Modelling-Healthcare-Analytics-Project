@@ -1,0 +1,185 @@
+QUESTION 1: Monthly Encounters by Specialty
+
+1. SQL Query:
+SELECT 
+    DATE_FORMAT(e.encounter_date, '%Y-%m') AS month,
+    s.specialty_name,
+    e.encounter_type,
+    COUNT(DISTINCT e.encounter_id) AS total_encounters,
+    COUNT(DISTINCT e.patient_id) AS unique_patients
+FROM 
+    encounters e
+JOIN 
+    providers p ON e.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+GROUP BY 
+    month, s.specialty_name, e.encounter_type
+ORDER BY 
+    month, s.specialty_name, e.encounter_type;
+
+
+Schema Analysis:
+2. Tables joined(3): encounters, providers, specialties
+   Number of joins: 2
+
+3. Query exec time
+'-> Group aggregate: count(distinct encounters.encounter_id), count(distinct encounters.patient_id)  (actual time=33.6..38.5 rows=1734 loops=1)\n
+ -> Sort: `month`, s.specialty_name, e.encounter_type  (actual time=33.6..34.3 rows=10000 loops=1)\n        
+ -> Stream results  (cost=8.25 rows=10) (actual time=0.152..22 rows=10000 loops=1)\n            
+ -> Nested loop inner join  (cost=8.25 rows=10) (actual time=0.137..16.7 rows=10000 loops=1)\n                
+ -> Nested loop inner join  (cost=4.75 rows=10) (actual time=0.0808..0.224 rows=100 loops=1)\n                    
+ -> Table scan on s  (cost=1.25 rows=10) (actual time=0.0532..0.0708 rows=10 loops=1)\n                    
+ -> Covering index lookup on p using specialty_id (specialty_id=s.specialty_id)  (cost=0.26 rows=1) (actual time=0.00806..0.0142 rows=10 loops=10)\n 
+ -> Index lookup on e using provider_id (provider_id=p.provider_id)  (cost=0.26 rows=1) (actual time=0.0172..0.16 rows=100 loops=100)\n'
+
+Hence total query execution time: 38.5 milliseconds
+
+
+
+Bottleneck Identified:
+
+
+
+QUESTION 2: Top Diagnosis-Procedure Pairs
+1. SQL Query:
+SELECT 
+    d.icd10_code,
+    pr.cpt_code,
+    COUNT(DISTINCT ed.encounter_id) AS encounter_count
+FROM 
+    encounter_diagnoses ed
+JOIN 
+    diagnoses d ON ed.diagnosis_id = d.diagnosis_id
+JOIN 
+    encounter_procedures ep ON ed.encounter_id = ep.encounter_id
+JOIN 
+    procedures pr ON ep.procedure_id = pr.procedure_id
+GROUP BY 
+    d.icd10_code, pr.cpt_code
+ORDER BY 
+    encounter_count DESC
+LIMIT 10;
+
+
+Schema Analysis:
+2. Tables joined(4): encounter_diagnoses, diagnoses, encounter_procedures, procedures
+   Number of joins: 3
+
+3. Query execution time Analysis
+'-> Limit: 10 row(s)  (actual time=304..304 rows=10 loops=1)\n    
+-> Sort: encounter_count DESC, limit input to 10 row(s) per chunk  (actual time=304..304 rows=10 loops=1)\n        
+-> Stream results  (actual time=291..304 rows=2500 loops=1)\n            
+-> Group aggregate: count(distinct encounter_diagnoses.encounter_id)  (actual time=291..303 rows=2500 loops=1)\n                
+-> Sort: d.icd10_code, pr.cpt_code  (actual time=291..293 rows=44439 loops=1)\n                    
+-> Stream results  (cost=57.8 rows=50) (actual time=0.172..256 rows=44439 loops=1)\n                        
+-> Nested loop inner join  (cost=57.8 rows=50) (actual time=0.167..240 rows=44439 loops=1)\n                            
+-> Nested loop inner join  (cost=40.2 rows=50) (actual time=0.158..191 rows=44439 loops=1)\n                                
+-> Nested loop inner join  (cost=22.8 rows=50) (actual time=0.141..48.7 rows=30052 loops=1)\n                                    
+-> Table scan on d  (cost=5.25 rows=50) (actual time=0.0608..0.118 rows=50 loops=1)\n                                    
+-> Filter: (ed.encounter_id is not null)  (cost=0.252 rows=1) (actual time=0.0171..0.945 rows=601 loops=50)\n                                        
+-> Index lookup on ed using diagnosis_id (diagnosis_id=d.diagnosis_id)  (cost=0.252 rows=1) (actual time=0.0169..0.91 rows=601 loops=50)\n 
+-> Filter: (ep.procedure_id is not null)  (cost=0.252 rows=1) (actual time=0.00387..0.00458 rows=1.48 loops=30052)\n      
+-> Index lookup on ep using encounter_id (encounter_id=ed.encounter_id)  (cost=0.252 rows=1) (actual time=0.00378..0.00441 rows=1.48 loops=30052)\n   
+-> Single-row index lookup on pr using PRIMARY (procedure_id=ep.procedure_id)  (cost=0.252 rows=1) (actual time=943e-6..965e-6 rows=1 loops=44439)\n'
+
+Execution time: 304.5 milliseconds
+
+Estimated rows scanned: 
+
+Bottleneck Identified:
+
+
+
+
+
+QUESTION 3: 30-Day Readmission Rate
+SQL Query:
+SELECT 
+    s.specialty_name,
+    COUNT(DISTINCT e2.encounter_id) / COUNT(DISTINCT e1.encounter_id) AS readmission_rate
+FROM 
+    encounters e1
+JOIN 
+    encounters e2 ON e1.patient_id = e2.patient_id 
+                  AND e2.encounter_date BETWEEN e1.discharge_date AND DATE_ADD(e1.discharge_date, INTERVAL 30 DAY)
+                  AND e1.encounter_type = 'Inpatient'
+                  AND e2.encounter_type = 'Inpatient'
+                  AND e1.encounter_id != e2.encounter_id
+JOIN 
+    providers p ON e1.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+GROUP BY 
+    s.specialty_name
+ORDER BY 
+    readmission_rate DESC;
+
+Schema Analysis:
+Tables joined: encounters (self-join), providers, specialties
+Number of joins: 3 (including self-join)
+
+Performance:
+
+'-> Sort: readmission_rate DESC  (actual time=54.7..54.7 rows=10 loops=1)\n    
+-> Stream results  (cost=516 rows=2.21) (actual time=8.11..54.6 rows=10 loops=1)\n        
+-> Group aggregate: count(distinct e1.encounter_id), count(distinct e2.encounter_id)  (cost=516 rows=2.21) (actual time=8.1..54.5 rows=10 loops=1)\n            
+-> Nested loop inner join  (cost=516 rows=4.89) (actual time=0.456..54.4 rows=81 loops=1)\n                
+-> Nested loop inner join  (cost=347 rows=97.8) (actual time=0.158..17.4 rows=3298 loops=1)\n                    
+-> Nested loop inner join  (cost=4.75 rows=10) (actual time=0.0998..0.247 rows=100 loops=1)\n                        
+-> Sort: s.specialty_name  (cost=1.25 rows=10) (actual time=0.082..0.0943 rows=10 loops=1)\n                            
+-> Table scan on s  (cost=1.25 rows=10) (actual time=0.0317..0.0619 rows=10 loops=1)\n                        
+-> Covering index lookup on p using specialty_id (specialty_id=s.specialty_id)  (cost=0.26 rows=1) (actual time=0.00576..0.0138 rows=10 loops=10)\n                    
+-> Filter: ((e1.encounter_type = \'Inpatient\') and (e1.patient_id is not null))  (cost=24.6 rows=9.78) (actual time=0.0312..0.17 rows=33 loops=100)\n                        
+-> Index lookup on e1 using provider_id (provider_id=p.provider_id)  (cost=24.6 rows=97.8) (actual time=0.0302..0.154 rows=100 loops=100)\n                
+-> Filter: ((e2.encounter_type = \'Inpatient\') and (e2.encounter_date between e1.discharge_date and (e1.discharge_date + interval 30 day)))  (cost=1.23 rows=0.05) (actual time=0.011..0.0111 rows=0.0246 loops=3298)\n                    
+-> Index lookup on e2 using patient_id (patient_id=e1.patient_id), with index condition: (e1.encounter_id <> e2.encounter_id)  (cost=1.23 rows=4.93) (actual time=0.00731..0.00992 rows=5.03 loops=3298)\n'
+
+Execution time: 54.7 milliseconds
+
+Estimated rows scanned: 
+
+Bottleneck Identified:
+
+
+
+QUESTION 4: Revenue by Specialty & Month
+SQL Query:
+SELECT 
+    DATE_FORMAT(b.claim_date, '%Y-%m') AS month,
+    s.specialty_name,
+    SUM(b.allowed_amount) AS total_allowed
+FROM 
+    billing b
+JOIN 
+    encounters e ON b.encounter_id = e.encounter_id
+JOIN 
+    providers p ON e.provider_id = p.provider_id
+JOIN 
+    specialties s ON p.specialty_id = s.specialty_id
+GROUP BY 
+    month, s.specialty_name
+ORDER BY 
+    month, total_allowed DESC;
+
+Schema Analysis:
+Tables joined: billing, encounters, providers, specialties
+Number of joins: 3
+
+Performance:
+'-> Sort: `month`, total_allowed DESC  (actual time=60.4..60.5 rows=607 loops=1)\n    
+-> Table scan on <temporary>  (actual time=59.6..59.8 rows=607 loops=1)\n        
+-> Aggregate using temporary table  (actual time=59.6..59.6 rows=607 loops=1)\n            
+-> Nested loop inner join  (cost=448 rows=978) (actual time=0.173..44.2 rows=10000 loops=1)\n                
+-> Nested loop inner join  (cost=105 rows=978) (actual time=0.152..5.17 rows=10000 loops=1)\n                    
+-> Nested loop inner join  (cost=4.75 rows=10) (actual time=0.116..0.267 rows=100 loops=1)\n                        
+-> Table scan on s  (cost=1.25 rows=10) (actual time=0.0859..0.101 rows=10 loops=1)\n                        
+-> Covering index lookup on p using specialty_id (specialty_id=s.specialty_id)  (cost=0.26 rows=1) (actual time=0.00734..0.014 rows=10 loops=10)\n                    
+-> Covering index lookup on e using provider_id (provider_id=p.provider_id)  (cost=1.25 rows=97.8) (actual time=0.024..0.0444 rows=100 loops=100)\n                
+-> Index lookup on b using encounter_id (encounter_id=e.encounter_id)  (cost=0.25 rows=1) (actual time=0.00307..0.00373 rows=1 loops=10000)\n'
+
+Execution time: 60.5 milliseconds
+
+Estimated rows scanned: 
+
+Bottleneck Identified:
