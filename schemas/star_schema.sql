@@ -1,3 +1,6 @@
+CREATE DATABASE IF NOT EXISTS hospital_star_db;
+USE hospital_star_db;
+
 -- Dimension Tables
 
 -- dim_date: For time-based analysis
@@ -27,21 +30,6 @@ CREATE TABLE dim_patient (
     UNIQUE KEY uk_patient_id (patient_id)
 );
 
--- dim_provider: Provider details (denormalized from OLTP)
-CREATE TABLE dim_provider (
-    provider_key INT PRIMARY KEY AUTO_INCREMENT,
-    provider_id INT NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    credential VARCHAR(20),
-    specialty_key INT,
-    department_key INT,
-    UNIQUE KEY uk_provider_id (provider_id),
-    FOREIGN KEY (specialty_key) REFERENCES dim_specialty(specialty_key),
-    FOREIGN KEY (department_key) REFERENCES dim_department(department_key)
-);
-
-
 -- dim_specialty: Specialty lookup
 CREATE TABLE dim_specialty (
     specialty_key INT PRIMARY KEY AUTO_INCREMENT,
@@ -61,6 +49,20 @@ CREATE TABLE dim_department (
     capacity INT,
     -- Comment: For location-based queries
     UNIQUE KEY uk_department_id (department_id)
+);
+
+-- dim_provider: Provider details (denormalized from OLTP)
+CREATE TABLE dim_provider (
+    provider_key INT PRIMARY KEY AUTO_INCREMENT,
+    provider_id INT NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    credential VARCHAR(20),
+    specialty_key INT,
+    department_key INT,
+    UNIQUE KEY uk_provider_id (provider_id),
+    FOREIGN KEY (specialty_key) REFERENCES dim_specialty(specialty_key),
+    FOREIGN KEY (department_key) REFERENCES dim_department(department_key)
 );
 
 -- dim_encounter_type: Encounter type lookup

@@ -1,3 +1,6 @@
+CREATE DATABASE hospital_db;
+USE hospital_db;
+
 CREATE TABLE patients (
   patient_id INT PRIMARY KEY,
   first_name VARCHAR (100),

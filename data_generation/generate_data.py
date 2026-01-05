@@ -105,7 +105,7 @@ for i in range(10000):
     )
 
 # Now, write to file
-with open('inserts.sql', 'w') as f:
+with open('load_data.sql', 'w') as f:
     # Helper function to write batched insert with SQL-safe literals
     def write_batched_insert(table, columns, data, batch_size=500):
         def sql_literal(val):
