@@ -95,6 +95,8 @@ CREATE TABLE fact_encounters (
     encounter_id INT NOT NULL,  -- Original ID for reference
     patient_key INT,
     provider_key INT,
+    specialty_key INT,  -- Denormalized for quick access
+    department_key INT, -- Denormalized for quick access
     encounter_type_key INT,
     encounter_date_key INT,  -- FK to dim_date
     discharge_date_key INT,  -- FK to dim_date
