@@ -1,0 +1,28 @@
+Decision 1: Fact Table Grain
+Choice: Option A: One row per encounter
+Why: The chosen fact table grain is one row per encounter. This grain best supports the four analytical queries because encounters are the central
+business event in the healthcare system. Monthly encounter counts, readmission analysis, and revenue aggregation all operate naturally at the
+encounter level. Using a more granular grain such as diagnosis- or procedure-level would cause duplication of encounter-level measures like 
+revenue and patient counts, leading to incorrect aggregations and increased storage and query cost. Diagnosis and procedure details are better
+modeled using dimension or bridge tables linked to the encounter fact table.
+
+Decision 2: Dimension Tables
+- dim_date: date_key (PK), calendar_date, year, month, quarter, day_of_week, is_holiday
+- dim_patient: patient_key (PK), patient_id, first_name, last_name, date_of_birth, gender, mrn, age_group (derived, e.g., '0-18', '19-65', '65+')
+- dim_provider: provider_key (PK), provider_id, first_name, last_name, credential, specialty_key, department_key
+- dim_specialty: specialty_key (PK), specialty_id, specialty_name, specialty_code
+- dim_department: department_key (PK), department_id, department_name, floor, capacity
+- dim_encounter_type: encounter_type_key (PK), type_name (e.g., 'Outpatient')
+- dim_diagnosis: diagnosis_key (PK), diagnosis_id, icd10_code, icd10_description
+- dim_procedure: procedure_key (PK), procedure_id, cpt_code, cpt_description
+
+But dim_diagnosis and dim_procedure will be connected to the fact table through bridge tables to avoid many to many relationships
+
+Decision 3: Pre-Aggregated Metrics
+Store: diagnosis_count, procedure_count, total_allowed, encounter_duration (discharge - encounter date in hours), is_readmission (flag for 30-day readmission)
+Why: Pre-aggregating avoids runtime joins/calculations (e.g., total_allowed from billing join). This helps performance by reducing query-time aggregations, especially for revenue/month queries.
+
+Decision 4: Bridge Tables
+Yes, bridge tables will be used for diagnoses and procedures (many-to-many).
+Why: Avoids denormalizing arrays/strings into fact table (inefficient for querying). Bridges allow flexible grouping without exploding fact rows.
+ Trade-off: Slight join overhead, but better than OLTP's multiple junctions.
