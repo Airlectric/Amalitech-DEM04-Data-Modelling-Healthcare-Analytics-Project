@@ -1,135 +1,195 @@
-# Healthcare Analytics Lab: OLTP to Star Schema
+# Healthcare Analytics Lab — OLTP to Star Schema
 
-## Project Overview
-
-This mini project simulates a **real-world data engineering scenario** in a healthcare analytics environment. I am acting as a junior data engineer at *HealthTech Analytics*, where the production system uses a **normalized OLTP (3NF) database** to support clinical operations. While suitable for transactions, this design is inefficient for analytics and reporting.
-
-The goal of the project is to:
-
-1. Analyze the existing OLTP schema
-2. Identify why analytical queries are slow and complex
-3. Design and later build an **optimized star schema** for analytics workloads
-
-This README documents **what has been completed so far**: schema analysis and realistic data generation for the OLTP system.
+**Status:** Star schema designed, ETL implemented, performance validated on synthetic data
 
 ---
 
-## Part 1: Normalized OLTP Schema
+## Project overview
 
-The production database is designed in **Third Normal Form (3NF)** to avoid redundancy and ensure data integrity. It consists of **9 interrelated tables**, modeling core healthcare entities such as patients, providers, encounters, diagnoses, procedures, and billing.
+This mini-project simulates a real-world data engineering task: migrating analytics workloads from a normalized OLTP schema to a star schema designed for fast, flexible reporting. The OLTP schema mirrors a typical clinical system (EHR-like) and is optimized for transactions. The star schema is optimized for analytics and reporting.
 
-### Key Characteristics of the OLTP Design
+Goals completed so far:
 
-* Highly normalized tables
-* Strong use of foreign keys
-* Optimized for inserts and updates
-* Complex joins required for analytics
+* Analyzed the production-style OLTP schema and identified analytic pain points
+* Generated realistic synthetic data and populated the OLTP database for testing
+* Designed a star schema (dimensions + encounter fact + bridge tables) at the encounter grain
+* Implemented SQL-based ETL to populate dimensions, a fact table with pre-aggregated metrics, and bridge tables
+* Validated query correctness and measured performance improvements for representative analytics queries
 
-This structure mirrors real clinical systems such as EHRs.
-
----
-
-## OLTP Tables and Purpose
-
-### Patients
-
-Stores demographic information for each patient.
-
-### Specialties
-
-Lookup table defining medical specialties (e.g., Cardiology, Orthopedics).
-
-### Departments
-
-Represents hospital departments, including location and capacity.
-
-### Providers
-
-Healthcare professionals linked to specialties and departments.
-
-### Encounters
-
-Represents patient visits (Outpatient, Inpatient, ER).
-Acts as the **core transactional table** connecting patients, providers, and departments.
-
-### Diagnoses
-
-Master list of ICD-10 diagnosis codes.
-
-### Encounter_Diagnoses
-
-Bridge table supporting the **many-to-many** relationship between encounters and diagnoses.
-Includes diagnosis sequence (primary, secondary, etc.).
-
-### Procedures
-
-Master list of CPT procedure codes.
-
-### Encounter_Procedures
-
-Bridge table capturing procedures performed during encounters.
-
-### Billing
-
-Financial data related to encounters, including claim and allowed amounts.
+All data is synthetic and used strictly for educational purposes.
 
 ---
 
-## Data Generation and Population
+## What’s in this repository (high level)
 
-To simulate a realistic healthcare workload, synthetic data was generated and inserted into all tables. The data volumes were intentionally chosen to reflect **realistic cardinalities and relationships**.
-
-### Current Row Counts
-
-| Table                | Row Count |
-| -------------------- | --------- |
-| patients             | 2,000     |
-| specialties          | 10        |
-| providers            | 100       |
-| encounters           | 10,000    |
-| diagnoses            | 50        |
-| encounter_diagnoses  | 30,052    |
-| procedures           | 50        |
-| encounter_procedures | 14,891    |
-| billing              | 10,000    |
-
-### Data Characteristics
-
-* Each patient has multiple encounters
-* Each encounter can have multiple diagnoses and procedures
-* Diagnosis and procedure counts vary per encounter
-* Billing data exists for every encounter
-
-This results in **join-heavy analytical queries**, which is intentional for demonstrating OLTP limitations.
+* OLTP schema DDL (relational schema used for the simulated production system)
+* Star schema DDL (dimension + fact + bridge definitions)
+* Data generation scripts (synthetic data for tables and cardinalities)
+* ETL scripts (SQL transformations that load dimensions, the encounter fact, and bridges)
+* Example analytics queries and EXPLAIN ANALYZE output for performance comparison
+* Documentation: design notes, ETL design, and this README / reflection
 
 ---
 
-## Why This OLTP Design Is Poor for Analytics
+## OLTP schema summary
 
-Although well-designed for transactions, this schema presents challenges for analytics:
+The normalized OLTP schema models clinical operations in 3NF. Key tables include:
 
-* Queries require **6–9 table joins**
-* Aggregations are expensive
-* Repeated joins across large bridge tables
-* Difficult to support BI tools efficiently
+* `patients` — patient demographic master data
+* `providers` — clinicians and their metadata (linked to specialties and departments)
+* `encounters` — transactional visits (inpatient / outpatient / ER)
+* `diagnoses`, `encounter_diagnoses` — ICD-10 master + encounter bridge
+* `procedures`, `encounter_procedures` — CPT master + encounter bridge
+* `billing` — claims and allowed amounts
 
-These issues motivate the transition to a **star schema**.
-
----
-
-## Next Steps (Planned)
-
-The next phases of the project will include:
-
-1. Identify fact tables and dimensions
-2. Design a healthcare-focused star schema
-3. Create dimension tables (Patient, Provider, Date, Diagnosis, Procedure, Department)
-4. Build a central fact table for encounters/billing
-5. Write ETL SQL to transform OLTP using star schema
-6. Demonstrate simplified and faster analytical queries
+**Design characteristics:** many small, normalized tables; foreign keys enforce integrity; excellent for transactional correctness, but expensive for analytic joins.
 
 ---
 
-## Notes
+## Synthetic dataset and cardinality
 
-This project intentionally mirrors real enterprise healthcare data systems and analytics migration patterns. All data is synthetic and used solely for educational purposes.
+The test dataset was sized to mimic a small hospital workload:
+
+|                Table | Row count |
+| -------------------: | --------: |
+|             patients |     2,000 |
+|          specialties |        10 |
+|            providers |       100 |
+|           encounters |    10,000 |
+|            diagnoses |        50 |
+|  encounter_diagnoses |    30,052 |
+|           procedures |        50 |
+| encounter_procedures |    14,891 |
+|              billing |    10,000 |
+
+These volumes are large enough to show join costs and to validate star schema benefits without requiring a cluster.
+
+---
+
+## Star schema design (summary)
+
+* **Fact**: `fact_encounters` — one row per encounter (encounter grain), stores pre-aggregated metrics such as `diagnosis_count`, `procedure_count`, `total_allowed`, `encounter_duration_hours`, and `is_readmission`. Also stores surrogate foreign keys (patient_key, provider_key, specialty_key, date keys).
+* **Dimensions**: `dim_date`, `dim_patient`, `dim_provider`, `dim_specialty`, `dim_department`, `dim_diagnosis`, `dim_procedure`, `dim_encounter_type`
+* **Bridges**: `bridge_encounter_diagnoses`, `bridge_encounter_procedures` to model many-to-many relationships without changing fact grain
+
+**Why this layout:** preserves the encounter grain for facts, avoids duplicating fact rows for each diagnosis/procedure, and stores precomputed metrics so common analytic queries do minimal work at query time.
+
+---
+
+## ETL approach (summary, non-code)
+
+**Dimension loads**
+
+* Load `dim_date` once (calendar table covering the range used).
+* Load each dimension from the OLTP master tables (patients, providers, specialties, etc.), creating surrogate keys and preserving source IDs for traceability.
+* Use `age_group` derivation and light transformations where useful.
+
+**Fact load**
+
+* For each encounter in OLTP:
+
+  * Resolve dimension surrogate keys by joining on source IDs (map patient_id → patient_key, provider_id → provider_key, etc.).
+  * Precompute metrics:
+
+    * `diagnosis_count` and `procedure_count` via aggregated counts from encounter bridge tables
+    * `total_allowed` as the sum of allowed_amount from billing per encounter
+    * `encounter_duration_hours` from discharge_date − encounter_date
+    * `is_readmission` computed at ETL by checking for an inpatient return within 30 days **and matching specialty** (the ETL expression mirrors the RDBMS readmission query to ensure identical results)
+  * Insert one row per encounter into `fact_encounters`.
+
+**Bridges**
+
+* Populate `bridge_encounter_diagnoses` and `bridge_encounter_procedures` by joining OLTP bridge tables to the loaded fact and dimensions. Aggregate or deduplicate at load-time so each `(encounter_key, diagnosis_key)` and `(encounter_key, procedure_key)` pair is unique.
+
+**Missing data**
+
+* Use COALESCE/defaults for NULLs in numeric metrics (e.g., `total_allowed = 0`).
+* Document and flag encounters with missing discharge dates or other required fields.
+
+**Refresh strategy**
+
+* The delivered ETL is written as a full-refresh workflow (truncate + reload) for clarity and reproducibility.
+* For production readiness, switch to incremental loads:
+
+  * Load new/changed dimension rows with SCD logic (Type 1/Type 2 as required).
+  * Insert new encounters incrementally and update affected aggregates (or refresh downstream aggregates).
+  * Handle late-arriving facts with upsert logic and, if necessary, backfill recalculation for derived fields (e.g., readmission flags).
+* The repository includes notes on how to convert the full-refresh SQL into incremental steps.
+
+---
+
+## Validation & correctness
+
+* The ETL logic for `is_readmission` was carefully aligned with the RDBMS definition (patient-level, inpatient only, 30-day window, and requiring the readmission be within the same specialty). This ensures parity between the OLTP-derived reports and the star schema results.
+* Bridge table inserts use GROUP BY / DISTINCT patterns to avoid duplicate primary-key violations.
+
+---
+
+## Performance quantification (representative queries)
+
+All measurements were taken on the synthetic dataset using local MySQL (EXPLAIN ANALYZE outputs and measured execution times). Times are representative for the dataset sizes above.
+
+### Query 1 — Total allowed by month and specialty
+
+|      Schema |                        Execution time |
+| ----------: | ------------------------------------: |
+|       RDBMS |                               60.5 ms |
+|        Star |                               33.9 ms |
+| Improvement | **60.5 / 33.9 ≈ 1.78× faster** (star) |
+
+**Why:** the star schema stores pre-aggregated financial metrics at the fact level and uses surrogate keys, so the query avoids repeated joins and aggregates over a smaller effective row set.
+
+### Query 2 — 30-day readmission rate by specialty
+
+|      Schema |                        Execution time |
+| ----------: | ------------------------------------: |
+|       RDBMS |                               44.6 ms |
+|        Star |                               13.7 ms |
+| Improvement | **44.6 / 13.7 ≈ 3.26× faster** (star) |
+
+**Why:** the star schema precomputes the readmission flag during ETL and performs aggregations over the fact table. This eliminates expensive self-joins and date-range checks at query time.
+
+---
+
+## Trade-offs & reflection
+
+**Gains**
+
+* Significant query acceleration for analytics queries (1.8× to 3.3× in representative tests).
+* Much simpler SQL for business users — most analytics are a join of fact to a couple of dimensions and straight aggregations.
+* Deterministic, single-source metrics (pre-aggregated values computed once in ETL).
+
+**Costs**
+
+* Added ETL complexity — logic and orchestration are required to map natural keys to surrogate keys, deduplicate, handle SCDs, and compute derived metrics.
+* Some data duplication (storing keys and pre-aggregates in the fact).
+* Need for a refresh strategy and processes to handle late-arriving data and dimension history.
+
+**Verdict**
+
+* For analytics workloads the trade-off is justified: faster queries and simpler analytics outweigh the storage and ETL complexity for typical reporting and BI use cases.
+
+---
+
+## How to reproduce 
+
+1. Create the OLTP schema and load synthetic data (run the RDBMS schema and load scripts).
+2. Create the star schema (dimension and fact DDL).
+3. Run the ETL scripts in order: load dimensions, load fact table, load bridge tables. The ETL scripts are written to be run on a local MySQL instance and include notes for disabling/enabling foreign key checks during full refreshes.
+4. Run the example analytics queries (both RDBMS and star variants) and compare EXPLAIN ANALYZE outputs and run times.
+
+---
+
+## Limitations and next steps
+
+* Consider adding a dedicated billing fact table if detailed billing analytics are required independently from encounter-level metrics.
+* Add automated tests and row-count reconciliations between source and target to guarantee ETL correctness on incremental runs.
+* Add pre-materialized monthly summary tables (snapshots) for very large-scale data or frequent dashboard queries.
+
+---
+
+## License & acknowledgments
+
+This repository contains educational/synthetic data and is intended for learning and demonstration purposes only.
+
+
