@@ -121,13 +121,15 @@ INSERT INTO hospital_star_db.fact_encounters (
     encounter_type_key,
     encounter_date_key,
     discharge_date_key,
+    claim_date_key,
     diagnosis_count,
     procedure_count,
     total_allowed,
+    claim_amount,
     encounter_duration_hours,
     is_readmission
 )
-SELECT 
+SELECT
     e.encounter_id,
     dp.patient_key,
     dpr.provider_key,
@@ -136,13 +138,15 @@ SELECT
     det.encounter_type_key,
     ddate.date_key AS encounter_date_key,
     ddischarge.date_key AS discharge_date_key,
+    dclaim.date_key AS claim_date_key,
     diag_cnt.cnt AS diagnosis_count,
     proc_cnt.cnt AS procedure_count,
     COALESCE(b.allowed_amount, 0) AS total_allowed,
+    COALESCE(b.claim_amount, 0) AS claim_amount,
     TIMESTAMPDIFF(HOUR, e.encounter_date, e.discharge_date) AS encounter_duration_hours,
     IF(
         EXISTS (
-            SELECT 1 
+            SELECT 1
             FROM hospital_db.encounters e2
             WHERE e2.patient_id = e.patient_id
               AND e2.encounter_type = 'Inpatient'
@@ -160,16 +164,14 @@ JOIN hospital_star_db.dim_encounter_type det ON det.type_name = e.encounter_type
 JOIN hospital_star_db.dim_date ddate ON ddate.calendar_date = DATE(e.encounter_date)
 JOIN hospital_star_db.dim_date ddischarge ON ddischarge.calendar_date = DATE(e.discharge_date)
 LEFT JOIN hospital_db.billing b ON b.encounter_id = e.encounter_id
+LEFT JOIN hospital_star_db.dim_date dclaim ON dclaim.calendar_date = b.claim_date
 LEFT JOIN (
-    SELECT encounter_id, COUNT(*) AS cnt
-    FROM hospital_db.encounter_diagnoses
-    GROUP BY encounter_id
+    SELECT encounter_id, COUNT(*) AS cnt FROM hospital_db.encounter_diagnoses GROUP BY encounter_id
 ) diag_cnt ON diag_cnt.encounter_id = e.encounter_id
 LEFT JOIN (
-    SELECT encounter_id, COUNT(*) AS cnt
-    FROM hospital_db.encounter_procedures
-    GROUP BY encounter_id
+    SELECT encounter_id, COUNT(*) AS cnt FROM hospital_db.encounter_procedures GROUP BY encounter_id
 ) proc_cnt ON proc_cnt.encounter_id = e.encounter_id;
+
 
 -- Step 11: Load bridge_encounter_diagnoses
 INSERT INTO hospital_star_db.bridge_encounter_diagnoses (encounter_key, diagnosis_key, diagnosis_sequence)

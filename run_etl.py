@@ -13,9 +13,9 @@ DB_STAR = os.getenv("DB_STAR")
 
 # SQL scripts in the order they should run
 sql_scripts = [
-    ("RDBMS schema", f"schemas/rdbms_schema.sql", None),  # no DB needed to create schema
+    ("RDBMS schema", f"schemas/rdbms_schema.sql", None), 
     ("Load data", f"data_generation/load_data.sql", DB_RDBMS),
-    ("Star schema", f"schemas/star_schema.sql", None),  # can create star DB inside script
+    ("Star schema", f"schemas/star_schema.sql", None),  
     ("ETL", f"etl/etl_star_schema.sql", DB_STAR)
 ]
 

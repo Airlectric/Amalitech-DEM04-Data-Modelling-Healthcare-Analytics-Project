@@ -1,24 +1,38 @@
 Question 1: Monthly Encounters by Specialty
 SQL:
 SELECT 
-    CONCAT(dd.year, '-', dd.month) AS month,
+    CONCAT(dd.year, '-', LPAD(dd.month, 2, '0')) AS month,
     ds.specialty_name,
     det.type_name AS encounter_type,
     COUNT(*) AS total_encounters,
     COUNT(DISTINCT fe.patient_key) AS unique_patients
-FROM 
-    fact_encounters fe
-JOIN 
-    dim_date dd ON fe.encounter_date_key = dd.date_key
-JOIN 
-    dim_specialty ds ON fe.specialty_key = ds.specialty_key
-JOIN 
-    dim_encounter_type det ON fe.encounter_type_key = det.encounter_type_key
+FROM fact_encounters fe
+JOIN dim_date dd ON fe.encounter_date_key = dd.date_key
+JOIN dim_specialty ds ON fe.specialty_key = ds.specialty_key
+JOIN dim_encounter_type det ON fe.encounter_type_key = det.encounter_type_key
 GROUP BY 
-    month, ds.specialty_name, encounter_type;
-Execution time estimate: 
-Improvement factor: 
+    dd.year,
+    dd.month,
+    ds.specialty_name,
+    det.type_name
+ORDER BY 
+    dd.year,
+    dd.month,
+    ds.specialty_name,
+    det.type_name;
+
+Execution time estimate: 66.2 milliseconds
+
+Improvement factor: 38.5/66.2 = 0.58 , star schema is 0.58x slower
+
 Explanation:
+The RDBMS query executes faster because it aggregates data closer to the source tables, requiring fewer joins
+and less data movement for the current data volume. The optimizer benefits from direct indexed lookups on transactional
+tables and performs grouping earlier in the plan.
+In contrast, the star schema query scans a larger fact table, performs multiple dimension joins, and executes grouping after
+these joins. This introduces additional join and sort overhead, which outweighs the benefits of denormalization at the current scale.
+
+
 
 Question 2: Top Diagnosis-Procedure Pairs
 SQL:
@@ -40,9 +54,19 @@ GROUP BY
     dd.icd10_code, dp.cpt_code
 ORDER BY encounter_count DESC
 LIMIT 10;
-Execution time estimate: 
-Improvement factor: 
+
+Execution time estimate: 138 milliseconds
+Improvement factor: 304 / 138 = 2.2 , star schema is 2.2x faster
 Explanation: 
+The star schema performs better because it:
+Uses pre-resolved surrogate keys instead of natural keys
+Avoids expensive joins across multiple normalized transactional tables
+Aggregates over bridge tables already optimized for many-to-many relationships
+Reduces row explosion earlier in the execution plan
+In contrast, the RDBMS query repeatedly joins large transactional tables (encounter_diagnoses, encounter_procedures) before aggregation,
+causing more intermediate rows, deeper nested loops, and higher sort cost.
+
+
 
 Question 3: 30-Day Readmission Rate
 SQL:
@@ -60,25 +84,37 @@ WHERE
 GROUP BY 
     ds.specialty_name
 ORDER BY readmission_rate DESC;
-Execution time estimate: 
-Improvement factor: 
-Explanation: 
+
+Execution time estimate: ~ 13.7 milliseconds
+Improvement factor: 44.2/13.7 = 3.2, star schema is ~ 3.2x 
+Explanation:
+The star schema outperforms the normalized RDBMS because it uses pre-resolved surrogate keys, avoids self-joins on large transactional 
+tables, applies filters earlier, and performs aggregation on a smaller, cleaner dataset. In contrast, the RDBMS query must traverse multiple 
+normalized tables, perform expensive self-joins with date-range conditions, and resolve DISTINCT counts after row explosion, resulting in
+significantly higher execution time 
+
+
+
 
 Question 4: Revenue by Specialty & Month
 SQL:
-SELECT 
-    CONCAT(dd.year, '-', dd.month) AS month,
+
+EXPLAIN ANALYZE
+SELECT
+    CONCAT(dd.year, '-', LPAD(dd.month, 2, '0')) AS month,
     ds.specialty_name,
     SUM(fe.total_allowed) AS total_allowed
-FROM 
-    fact_encounters fe
-JOIN 
-    dim_date dd ON fe.encounter_date_key = dd.date_key
-JOIN 
-    dim_specialty ds ON fe.specialty_key = ds.specialty_key
-GROUP BY 
-    month, ds.specialty_name
-ORDER BY month, total_allowed DESC;
-Execution time estimate: 
-Improvement factor: 
+FROM fact_encounters fe
+JOIN dim_date dd ON fe.claim_date_key = dd.date_key
+JOIN dim_specialty ds ON fe.specialty_key = ds.specialty_key
+WHERE fe.claim_date_key IS NOT NULL  -- Only encounters with a claim
+GROUP BY
+    dd.year,
+    dd.month,
+    ds.specialty_name
+ORDER BY 
+    month, total_allowed DESC;
+
+Execution time estimate: ~ 33.9 milliseconds
+Improvement factor: 60.5 / 33.9 = 1.78x , hence star schema is approximately 2x faster
 Explanation: 
