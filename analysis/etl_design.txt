@@ -1,0 +1,115 @@
+1. Dimension Load Logic
+
+    1. dim_patient
+    Load from the source patients table.
+    Map natural keys (like patient_id) to surrogate keys (patient_key).
+
+    Example pseudocode:
+
+    INSERT INTO dim_patient (patient_key, patient_id, first_name, last_name, date_of_birth, gender, mrn, age_group)
+    SELECT 
+        generate_surrogate_key(),
+        patient_id,
+        first_name,
+        last_name,
+        date_of_birth,
+        gender,
+        mrn,
+        CASE 
+            WHEN age < 18 THEN '0-18'
+            WHEN age BETWEEN 18 AND 64 THEN '19-65'
+            ELSE '65+'
+        END AS age_group
+    FROM patients;
+
+
+    2. dim_date
+    One-time load of all dates between a start and end date (e.g., 1900–2100).
+    Each date gets a surrogate key (date_key).
+
+    Pseudocode:
+
+    FOR each date from '1900-01-01' to '2100-12-31':
+        INSERT INTO dim_date (date_key, calendar_date, year, month, quarter, day_of_week, is_holiday)
+
+
+    3. Other dimensions (provider, specialty, department, encounter_type, diagnosis, procedure)
+    Similar approach: map natural keys from source tables to surrogate keys.
+    Updates: overwrite or use SCD depending on business rules.
+
+
+2. Fact Table Load Logic
+
+    1. fact_encounters
+
+    Dimension lookups: For each encounter in encounters, join to dimensions using natural keys to get surrogate keys:
+    Patient - dim_patient.patient_key
+    Provider - dim_provider.provider_key
+    Specialty - dim_specialty.specialty_key
+    Department - dim_department.department_key
+    Encounter Type - dim_encounter_type.encounter_type_key
+    Date - dim_date.date_key
+
+
+    2. Pre-aggregated metrics:
+
+    diagnosis_count = COUNT of diagnoses per encounter
+    procedure_count = COUNT of procedures per encounter
+    total_allowed = SUM of allowed amounts from billing
+    encounter_duration_hours = discharge_date - encounter_date
+    is_readmission = Boolean, calculated by checking if the same patient has another inpatient encounter within 30 days, matching specialty.
+
+    3. Missing data handling:
+
+    Used COALESCE to fill nulls (e.g., total_allowed = COALESCE(b.allowed_amount, 0)).
+
+3.Bridge Table Load Logic
+
+    1. bridge_encounter_diagnoses
+
+    For each encounter => diagnosis mapping:
+
+    INSERT INTO bridge_encounter_diagnoses (encounter_key, diagnosis_key, diagnosis_sequence)
+    SELECT DISTINCT
+        fe.encounter_key,
+        dd.diagnosis_key,
+        ed.diagnosis_sequence
+    FROM encounter_diagnoses ed
+    JOIN fact_encounters fe ON fe.encounter_id = ed.encounter_id
+    JOIN dim_diagnosis dd ON dd.diagnosis_id = ed.diagnosis_id;
+
+    Ensures no duplicate (encounter_key, diagnosis_key) pairs.
+
+    2. bridge_encounter_procedures
+
+    For each encounter => procedure mapping:
+
+    INSERT INTO bridge_encounter_procedures (encounter_key, procedure_key, procedure_date_key)
+    SELECT DISTINCT
+        fe.encounter_key,
+        dp.procedure_key,
+        ddate.date_key
+    FROM encounter_procedures ep
+    JOIN fact_encounters fe ON fe.encounter_id = ep.encounter_id
+    JOIN dim_procedure dp ON dp.procedure_id = ep.procedure_id
+    JOIN dim_date ddate ON ddate.calendar_date = ep.procedure_date;
+
+    Pre-aggregates procedure counts by date.
+
+4. Refresh Strategy
+
+    1.Full refresh vs incremental:
+
+    Current ETL code does a full refresh (truncates dimension/fact tables).
+    For production, an incremental load is preferred:
+    Only insert new encounters, diagnoses, procedures.
+    Update dimension tables using SCD if changes occur.
+
+    Frequency:
+    Depends on business needs: daily or weekly is common for healthcare reporting.
+
+    2.Late-arriving facts:
+
+    Will use upsert logic for late encounters:
+    Insert new rows into fact tables.
+    Recalculate derived metrics (e.g., readmission flags, totals).

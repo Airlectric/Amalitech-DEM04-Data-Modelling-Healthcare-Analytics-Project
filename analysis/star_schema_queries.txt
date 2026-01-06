@@ -119,6 +119,5 @@ Execution time estimate: ~ 33.9 milliseconds
 Improvement factor: 60.5 / 33.9 = 1.78x , hence star schema is approximately 2x faster
 Explanation: 
 In the RDBMS, each join has to match natural keys across multiple large tables, which increases lookup costs.
-
 In the star schema, the fact_encounters table already has pre-resolved foreign keys to dim_date, dim_specialty, etc.,
 and all aggregations (SUM(total_allowed)) are on fact-level rows, so MySQL can scan fewer rows and perform fewer nested lookups.
