@@ -145,11 +145,3 @@ CREATE TABLE bridge_encounter_procedures (
     INDEX idx_encounter_key (encounter_key),
     INDEX idx_procedure_key (procedure_key)
 );
-
-
-
--- Schema Alteration: Adding Billing Info to Fact Table
-ALTER TABLE hospital_star_db.fact_encounters 
-ADD COLUMN claim_date_key INT NULL AFTER discharge_date_key,
-ADD COLUMN claim_amount DECIMAL(12,2) NULL AFTER total_allowed,
-ADD INDEX idx_claim_date_key (claim_date_key);
