@@ -16,7 +16,7 @@ sql_scripts = [
     ("RDBMS schema", f"schemas/rdbms_schema.sql", None), 
     ("Load data", f"data_generation/load_data.sql", DB_RDBMS),
     ("Star schema", f"schemas/star_schema.sql", None),  
-    ("ETL", f"etl/etl_star_schema.sql", DB_STAR)
+    ("ETL", f"etl/full_refresh_etl.sql", DB_STAR)
 ]
 
 def run_sql_file(file_path, database=None):
