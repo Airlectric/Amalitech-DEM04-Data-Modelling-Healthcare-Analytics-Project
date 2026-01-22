@@ -25,27 +25,30 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 
 -- Step 2: Load dim_date (1900 – 2100)
-INSERT INTO hospital_star_db.dim_date (calendar_date, year, month, quarter, day_of_week, is_holiday)
-SELECT 
-    d.date_val AS calendar_date,
-    YEAR(d.date_val) AS year,
-    MONTH(d.date_val) AS month,
-    QUARTER(d.date_val) AS quarter,
-    WEEKDAY(d.date_val) + 1 AS day_of_week,  -- 1=Monday ... 7=Sunday
+INSERT INTO hospital_star_db.dim_date (
+    calendar_date,
+    year,
+    month,
+    quarter,
+    day_of_week,
+    is_holiday
+)
+WITH RECURSIVE dates AS (
+    SELECT DATE('1900-01-01') AS calendar_date
+    UNION ALL
+    SELECT calendar_date + INTERVAL 1 DAY
+    FROM dates
+    WHERE calendar_date < '2100-12-31'
+)
+SELECT
+    calendar_date,
+    YEAR(calendar_date) AS year,
+    MONTH(calendar_date) AS month,
+    QUARTER(calendar_date) AS quarter,
+    WEEKDAY(calendar_date) + 1 AS day_of_week,   -- 1=Monday ... 7=Sunday
     FALSE AS is_holiday
-FROM (
-    SELECT DATE('1900-01-01') + INTERVAL a.NUMBER DAY AS date_val
-    FROM (
-        SELECT (t4.NUMBER*10000 + t3.NUMBER*1000 + t2.NUMBER*100 + t1.NUMBER*10 + t0.NUMBER) AS NUMBER
-        FROM 
-            (SELECT 0 AS NUMBER UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t0,
-            (SELECT 0 AS NUMBER UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t1,
-            (SELECT 0 AS NUMBER UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t2,
-            (SELECT 0 AS NUMBER UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t3,
-            (SELECT 0 AS NUMBER UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t4
-    ) a
-    WHERE DATE('1900-01-01') + INTERVAL a.NUMBER DAY <= '2100-12-31'
-) d;
+FROM dates;
+
 
 -- Step 3: Load dim_patient
 INSERT INTO hospital_star_db.dim_patient (patient_id, first_name, last_name, date_of_birth, gender, mrn, age_group)
