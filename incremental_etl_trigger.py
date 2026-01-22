@@ -14,7 +14,7 @@ DB_CONFIG = {
     "database": os.getenv("DB_STAR")
 }
 
-SQL_FILE = "incremental_etl.sql"
+SQL_FILE = "etl/incremental_etl.sql"
 
 
 def execute_etl():
