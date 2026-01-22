@@ -1,115 +1,111 @@
 1. Dimension Load Logic
+    1.1 Patient Dimension (dim_patient)
+        The patient dimension is populated from the source patients table.
+        Each patient record is assigned a surrogate key that uniquely identifies the patient in the data warehouse, 
+        independent of the source system.
 
-    1. dim_patient
-    Load from the source patients table.
-    Map natural keys (like patient_id) to surrogate keys (patient_key).
+        Natural identifiers such as patient ID and medical record number are preserved for traceability.
+        Derived attributes, such as age group, are calculated during the load to support analytical use cases.
 
-    Example pseudocode:
+        Age groups are assigned based on the patient’s age at the time of load:
 
-    INSERT INTO dim_patient (patient_key, patient_id, first_name, last_name, date_of_birth, gender, mrn, age_group)
-    SELECT 
-        generate_surrogate_key(),
-        patient_id,
-        first_name,
-        last_name,
-        date_of_birth,
-        gender,
-        mrn,
-        CASE 
-            WHEN age < 18 THEN '0-18'
-            WHEN age BETWEEN 18 AND 64 THEN '19-65'
-            ELSE '65+'
-        END AS age_group
-    FROM patients;
+        Pediatric (0–18)
+
+        Adult (19–65)
+
+        Senior (65+)
+
+        The dimension is refreshed by inserting new patients and updating existing records based on defined business rules
+        (e.g., overwrite or Slowly Changing Dimension handling).
 
 
-    2. dim_date
-    One-time load of all dates between a start and end date (e.g., 1900–2100).
-    Each date gets a surrogate key (date_key).
+    1.2 Date Dimension (dim_date)
+        The date dimension is a static, pre-generated dimension populated once.
 
-    Pseudocode:
+        It contains one record per calendar date within a defined range (e.g., 1900–2100).
+        Each date is assigned a surrogate date key and enriched with calendar attributes such as:
 
-    FOR each date from '1900-01-01' to '2100-12-31':
-        INSERT INTO dim_date (date_key, calendar_date, year, month, quarter, day_of_week, is_holiday)
+        Year
+        Month
+        Quarter
+        Day of week
+        Holiday indicator
 
+        This dimension is not refreshed during regular ETL cycles and serves as a shared reference for all date-related joins
+        in fact and bridge tables.
 
-    3. Other dimensions (provider, specialty, department, encounter_type, diagnosis, procedure)
-    Similar approach: map natural keys from source tables to surrogate keys.
-    Updates: overwrite or use SCD depending on business rules.
+    1.3 Other Dimensions
+
+        (provider, specialty, department, encounter type, diagnosis, procedure)
+
+        All remaining dimensions follow the same general pattern:
+            Source tables provide natural business keys.
+            Each unique business entity is assigned a surrogate key.
+            Descriptive attributes are stored to support reporting and slicing.
+            Dimension updates depend on business requirements:
+            Some dimensions may be overwritten on change.
+            Others may use Slowly Changing Dimension (SCD) logic to preserve history.
 
 
 2. Fact Table Load Logic
+    2.1 Encounter Fact Table (fact_encounters)
+    The encounter fact table stores one row per healthcare encounter.
+    During load:
+        Each encounter is matched to all related dimensions using natural keys.
+        Dimension surrogate keys are resolved and stored in the fact table.
 
-    1. fact_encounters
+        The fact table references:
+        Patient
+        Provider
+        Specialty
+        Department
+        Encounter type
+        Encounter and discharge dates (via the date dimension)
 
-    Dimension lookups: For each encounter in encounters, join to dimensions using natural keys to get surrogate keys:
-    Patient - dim_patient.patient_key
-    Provider - dim_provider.provider_key
-    Specialty - dim_specialty.specialty_key
-    Department - dim_department.department_key
-    Encounter Type - dim_encounter_type.encounter_type_key
-    Date - dim_date.date_key
+    2.2 Derived and Aggregated Metrics
+        Several analytical measures are calculated during the fact load:
+            Diagnosis count: number of diagnoses associated with the encounter
+            Procedure count: number of procedures performed during the encounter
+            Total allowed amount: aggregated billing value for the encounter
+            Encounter duration: time between encounter start and discharge
+            Readmission flag: indicates whether a patient had a qualifying inpatient encounter within 30 days in the same specialty
+            These measures are precomputed to improve query performance and simplify reporting logic.
+
+    2.3 Missing Data Handling
+        Where source data is incomplete:
+            Null numeric values are replaced with zero
+            Missing references are handled using default or “unknown” dimension keys
+            This ensures referential integrity and prevents analytical errors during aggregation.
 
 
-    2. Pre-aggregated metrics:
+3. Bridge Table Load Logic
+    3.1 Encounter–Diagnosis Bridge (bridge_encounter_diagnoses)
+        This bridge table resolves the many-to-many relationship between encounters and diagnoses.
+        For each encounter:
+            All associated diagnoses are identified
+            Each diagnosis is linked to the encounter using surrogate keys
+            Diagnosis sequence is preserved to maintain clinical ordering
+            Duplicate encounter–diagnosis combinations are eliminated to ensure data integrity.
 
-    diagnosis_count = COUNT of diagnoses per encounter
-    procedure_count = COUNT of procedures per encounter
-    total_allowed = SUM of allowed amounts from billing
-    encounter_duration_hours = discharge_date - encounter_date
-    is_readmission = Boolean, calculated by checking if the same patient has another inpatient encounter within 30 days, matching specialty.
+    3.2 Encounter–Procedure Bridge (bridge_encounter_procedures)
+        This bridge table resolves the many-to-many relationship between encounters and procedures.
+        For each encounter:
+            All performed procedures are linked using surrogate keys
+            The procedure date is captured using the date dimension
+            This structure supports flexible analysis of procedures by encounter, time, and procedure type without inflating the fact table.
 
-    3. Missing data handling:
 
-    Used COALESCE to fill nulls (e.g., total_allowed = COALESCE(b.allowed_amount, 0)).
+4. Refresh and Maintenance Strategy
+    4.1 Full Refresh vs Incremental Load
+        The current implementation performs a full refresh, truncating and reloading all tables.
+        For production use, an incremental load strategy is recommended:
+            Insert only new encounters
+            Load only new diagnoses and procedures
+            Update dimensions selectively using SCD logic where appropriate
+            Load frequency is determined by business needs, with daily or weekly refreshes common in healthcare analytics.
 
-3.Bridge Table Load Logic
-
-    1. bridge_encounter_diagnoses
-
-    For each encounter => diagnosis mapping:
-
-    INSERT INTO bridge_encounter_diagnoses (encounter_key, diagnosis_key, diagnosis_sequence)
-    SELECT DISTINCT
-        fe.encounter_key,
-        dd.diagnosis_key,
-        ed.diagnosis_sequence
-    FROM encounter_diagnoses ed
-    JOIN fact_encounters fe ON fe.encounter_id = ed.encounter_id
-    JOIN dim_diagnosis dd ON dd.diagnosis_id = ed.diagnosis_id;
-
-    Ensures no duplicate (encounter_key, diagnosis_key) pairs.
-
-    2. bridge_encounter_procedures
-
-    For each encounter => procedure mapping:
-
-    INSERT INTO bridge_encounter_procedures (encounter_key, procedure_key, procedure_date_key)
-    SELECT DISTINCT
-        fe.encounter_key,
-        dp.procedure_key,
-        ddate.date_key
-    FROM encounter_procedures ep
-    JOIN fact_encounters fe ON fe.encounter_id = ep.encounter_id
-    JOIN dim_procedure dp ON dp.procedure_id = ep.procedure_id
-    JOIN dim_date ddate ON ddate.calendar_date = ep.procedure_date;
-
-    Pre-aggregates procedure counts by date.
-
-4. Refresh Strategy
-
-    1.Full refresh vs incremental:
-
-    Current ETL code does a full refresh (truncates dimension/fact tables).
-    For production, an incremental load is preferred:
-    Only insert new encounters, diagnoses, procedures.
-    Update dimension tables using SCD if changes occur.
-
-    Frequency:
-    Depends on business needs: daily or weekly is common for healthcare reporting.
-
-    2.Late-arriving facts:
-
-    Will use upsert logic for late encounters:
-    Insert new rows into fact tables.
-    Recalculate derived metrics (e.g., readmission flags, totals).
+    4.2 Late-Arriving Data Handling
+            Late-arriving encounters and related records are handled through upsert logic:
+            New records are inserted when they arrive
+            Existing fact records are updated if new information impacts derived metrics
+            Metrics such as readmission indicators and financial totals are recalculated as needed to maintain accuracy.
