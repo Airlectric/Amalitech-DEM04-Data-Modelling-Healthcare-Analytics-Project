@@ -102,9 +102,11 @@ CREATE TABLE fact_encounters (
     encounter_type_key INT,
     encounter_date_key INT,  -- FK to dim_date
     discharge_date_key INT,  -- FK to dim_date
+    claim_date_key INT,
     diagnosis_count INT,  -- Pre-agg
     procedure_count INT,  -- Pre-agg
     total_allowed DECIMAL(12,2),  -- Pre-agg from billing
+    claim_amount DECIMAL(12,2) DEFAULT 0,  -- Pre-agg from billing
     encounter_duration_hours INT,  -- Pre-computed
     is_readmission BOOLEAN DEFAULT FALSE,  -- Flag for 30-day readmission
     FOREIGN KEY (patient_key) REFERENCES dim_patient(patient_key),

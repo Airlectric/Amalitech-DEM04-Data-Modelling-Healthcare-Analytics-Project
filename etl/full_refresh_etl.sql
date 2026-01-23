@@ -24,7 +24,9 @@ TRUNCATE TABLE hospital_star_db.dim_procedure;
 SET FOREIGN_KEY_CHECKS = 1;
 
 
--- Step 2: Load dim_date (1900 – 2100)
+-- Step 2: Load dim_date (2000 – 2100)
+SET @@cte_max_recursion_depth = 100000;
+
 INSERT INTO hospital_star_db.dim_date (
     calendar_date,
     year,
@@ -34,20 +36,21 @@ INSERT INTO hospital_star_db.dim_date (
     is_holiday
 )
 WITH RECURSIVE dates AS (
-    SELECT DATE('1900-01-01') AS calendar_date
+    SELECT DATE('2000-01-01') AS calendar_date
     UNION ALL
     SELECT calendar_date + INTERVAL 1 DAY
     FROM dates
-    WHERE calendar_date < '2100-12-31'
+    WHERE calendar_date <= '2100-12-31'
 )
 SELECT
     calendar_date,
     YEAR(calendar_date) AS year,
     MONTH(calendar_date) AS month,
     QUARTER(calendar_date) AS quarter,
-    WEEKDAY(calendar_date) + 1 AS day_of_week,   -- 1=Monday ... 7=Sunday
+    WEEKDAY(calendar_date) + 1 AS day_of_week,
     FALSE AS is_holiday
 FROM dates;
+
 
 
 -- Step 3: Load dim_patient

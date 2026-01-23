@@ -5,11 +5,13 @@ from mysql.connector import Error
 
 # Load credentials from .env
 load_dotenv()
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_RDBMS = os.getenv("DB_RDBMS")
-DB_STAR = os.getenv("DB_STAR")
+DB_RDBMS = os.getenv("OLTP_DB")
+DB_STAR = os.getenv("OLAP_DB")
+
 
 # SQL scripts in the order they should run
 sql_scripts = [
