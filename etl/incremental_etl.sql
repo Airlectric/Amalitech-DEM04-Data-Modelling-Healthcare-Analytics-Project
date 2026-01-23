@@ -12,7 +12,7 @@ USE hospital_star_db;
 
 -- Step 1: Get last watermark and set variables
 SET @last_watermark = (SELECT MAX(last_watermark) FROM etl_control WHERE status = 'SUCCESS');
-SET @last_watermark = IFNULL(@last_watermark, '1900-01-01');  -- Default for first run
+SET @last_watermark = IFNULL(@last_watermark, '2000-01-01');  -- Default for first run
 SET @lookback_days = 7;  -- Adjust for your data latency
 SET @incremental_cutoff = @last_watermark;
 SET @lookback_cutoff = DATE_SUB(CURDATE(), INTERVAL @lookback_days DAY);

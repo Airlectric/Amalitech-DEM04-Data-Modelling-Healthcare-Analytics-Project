@@ -119,6 +119,7 @@ CREATE TABLE fact_encounters (
     -- Comment: Central fact at encounter grain with pre-agg metrics
     INDEX idx_encounter_date_key (encounter_date_key),
     INDEX idx_specialty_key (specialty_key),
+    INDEX idx_claim_date_key (claim_date_key),
     UNIQUE KEY uk_encounter_id (encounter_id)
 );
 

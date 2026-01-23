@@ -1,11 +1,5 @@
 ---- Schema Evolution Scripts ----
 
--- Schema Alteration: Adding Billing Info to Fact Table
-ALTER TABLE hospital_star_db.fact_encounters 
-ADD COLUMN claim_date_key INT NULL AFTER discharge_date_key,
-ADD COLUMN claim_amount DECIMAL(12,2) NULL AFTER total_allowed,
-ADD INDEX idx_claim_date_key (claim_date_key);
-
 -- Alter dim_patient for SCD Type 2
 ALTER TABLE hospital_star_db.dim_patient
 ADD COLUMN start_date DATE DEFAULT NULL,
@@ -20,7 +14,6 @@ ADD COLUMN load_date DATE DEFAULT NULL;
 
 
 -- ETL Control Table to track loads
-
 CREATE TABLE IF NOT EXISTS hospital_star_db.etl_control (
     control_id       INT AUTO_INCREMENT PRIMARY KEY,
     load_type        VARCHAR(20),          -- 'FULL' or 'INCREMENTAL'

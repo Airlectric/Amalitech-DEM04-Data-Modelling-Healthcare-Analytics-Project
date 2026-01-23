@@ -15,7 +15,8 @@ DB_STAR = os.getenv("OLAP_DB")
 
 # SQL scripts in the order they should run
 sql_scripts = [
-    ("RDBMS schema", f"schemas/rdbms_schema.sql", None), 
+    ("RDBMS schema", f"schemas/oltp_schema.sql", None),
+    ("Alter OLTP with timestamps", f"schemas/updates_for_incremental/oltp_timestamps.sql", DB_RDBMS),
     ("Load data", f"data_generation/load_data.sql", DB_RDBMS),
     ("Star schema", f"schemas/star_schema.sql", None),  
     ("ETL", f"etl/full_refresh_etl.sql", DB_STAR)
